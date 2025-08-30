@@ -2,7 +2,9 @@ export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = (typeof localStorage!=='undefined') ? localStorage.getItem('authToken') : null
   const headers: any = { 'Content-Type': 'application/json', ...(opts.headers||{}) }
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(path, { ...opts, headers })
+  const base = (import.meta as any).env?.VITE_API_BASE || ''
+  const url = (base && path.startsWith('/api')) ? `${base}${path}` : path
+  const res = await fetch(url, { ...opts, headers })
   if (!res.ok) throw new Error(await res.text())
   return res.json() as Promise<T>
 }

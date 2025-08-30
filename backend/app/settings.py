@@ -32,6 +32,15 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        # Honor DATABASE_URL if provided (Railway/Heroku style)
+        db_url_env = os.getenv("DATABASE_URL")
+        if db_url_env:
+            url = db_url_env
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+psycopg://", 1)
+            elif url.startswith("postgresql://"):
+                url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+            return url
         # Include a small connect timeout to fail fast if DNS/host is bad
         return (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
