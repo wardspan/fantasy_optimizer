@@ -105,6 +105,8 @@ docker compose exec web npm test -- --run
   - `APP_PASSWORD`: shared password for login (leave empty to disable login).
   - `AUTH_SECRET`: random string to sign tokens.
 
+Use the Login screen to register/sign in with email + password, or set `APP_PASSWORD` for a single shared password (leave email blank on login).
+
 ## Make Targets
 
 ### Automation
