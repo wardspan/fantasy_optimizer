@@ -24,13 +24,17 @@ from ..services.waivers import waiver_suggestions
 from ..services.trades import evaluate_trade
 from ..services.draft import best_picks_by_position
 from ..services.alerts import send_slack_message
+from ..services import sportsdata as sdata
 from ..services.schedule import upsert_game, fetch_weather_for_week
-from ..auth import create_token, auth_required
+from ..auth import create_token, auth_required, hash_password, verify_password
+from ..models import User
+from ..models import Roster, Player, RosterStatus, Injury, SettingsRow
 from ingest.providers import fantasypros as fp_provider
 from ingest.providers import espn as espn_provider
 from ingest.providers import injuries as injuries_provider
 from ingest.providers import adp as adp_provider
 from ingest.providers import espn as espn_provider
+from ingest.providers import dvp as dvp_provider
 
 
 router = APIRouter(prefix="/api")
@@ -42,16 +46,39 @@ def healthz() -> Dict[str, str]:
 
 
 @router.post("/auth/login")
-def auth_login(body: Dict[str, str]) -> Dict[str, Any]:
+def auth_login(body: Dict[str, str], session: Session = Depends(get_session)) -> Dict[str, Any]:
     from ..settings import get_settings
     settings = get_settings()
-    if not settings.app_password:
-        # auth not configured
-        token = create_token("anonymous")
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    if settings.app_password and not email:
+        # Backward compatibility: allow shared password-only login when email absent
+        if password != settings.app_password:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        token = create_token("user")
         return {"ok": True, "token": token}
-    if body.get("password") != settings.app_password:
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password required")
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user or not verify_password(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_token("user")
+    token = create_token(email)
+    return {"ok": True, "token": token}
+
+
+@router.post("/auth/register")
+def auth_register(body: Dict[str, str], session: Session = Depends(get_session)) -> Dict[str, Any]:
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password required")
+    existing = session.exec(select(User).where(User.email == email)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user = User(email=email, password_hash=hash_password(password))
+    session.add(user)
+    session.commit()
+    token = create_token(email)
     return {"ok": True, "token": token}
 
 
@@ -129,6 +156,12 @@ def ingest_and_blend(week: int, session: Session = Depends(get_session)) -> Dict
     c_fp = fp_provider.fetch_projections(session, week)
     c_espn = espn_provider.fetch_projections(session, week)
     c_inj = injuries_provider.fetch_injuries(session, week)
+    c_sd_proj = sdata.fetch_projections(session, week)
+    try:
+        from ingest.providers import yahoo as yahoo_provider
+        c_yahoo_proj = yahoo_provider.fetch_projections(session, week)
+    except Exception:
+        c_yahoo_proj = 0
     c_adp_fp = adp_provider.fetch_adp(session)
     c_adp_espn = espn_provider.fetch_adp(session)
     session.commit()
@@ -140,7 +173,7 @@ def ingest_and_blend(week: int, session: Session = Depends(get_session)) -> Dict
         else:
             row.expected = data["expected"]
     session.commit()
-    return {"ok": True, "counts": {"fantasypros": c_fp, "espn": c_espn, "injuries": c_inj, "adp_fp": c_adp_fp, "adp_espn": c_adp_espn}, "blended": len(blended)}
+    return {"ok": True, "counts": {"fantasypros": c_fp, "espn": c_espn, "sportsdata_proj": c_sd_proj, "yahoo_proj": c_yahoo_proj, "injuries": c_inj, "adp_fp": c_adp_fp, "adp_espn": c_adp_espn}, "blended": len(blended)}
 
 
 @router.get("/lineup/optimal", response_model=LineupResponse)
@@ -322,6 +355,228 @@ def import_schedule(csv: str, week: int, session: Session = Depends(get_session)
 async def update_weather(week: int, session: Session = Depends(get_session)) -> Dict[str, Any]:
     cnt = await fetch_weather_for_week(session, week)
     return {"ok": True, "updated_games": cnt}
+
+
+@router.get("/roster/my")
+def my_roster(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    rows = session.exec(select(Roster, Player).join(Player, Roster.player_id == Player.id).where(Roster.my_team == True)).all()
+    data = []
+    for r, p in rows:
+        data.append({
+            "player_id": p.id,
+            "name": p.name,
+            "team": p.team,
+            "position": p.position,
+            "status": r.status.value,
+        })
+    return {"roster": data}
+
+
+@router.get("/news/my-players")
+def news_my_players(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    settings = session.get(SettingsRow, 1)
+    current_week = int((settings.data or {}).get("current_week", 1)) if settings else 1
+    roster_rows = session.exec(select(Roster.player_id).where(Roster.my_team == True)).all()
+    pids = [(row[0] if isinstance(row, tuple) else row) for row in roster_rows]
+    items: list[dict] = []
+    if pids:
+        # Always include injury notes stored locally
+        inj = session.exec(select(Injury, Player).join(Player, Injury.player_id == Player.id).where(Injury.week == current_week, Injury.player_id.in_(pids))).all()
+        for i, p in inj:
+            if i.status or i.note:
+                items.append({
+                    "player_id": p.id,
+                    "name": p.name,
+                    "team": p.team,
+                    "status": i.status,
+                    "note": i.note,
+                    "week": current_week,
+                    "kind": "injury",
+                })
+        # If SportsData.io key configured, enrich with recent player news
+        try:
+            # Unique teams from my roster
+            teams = [t for (t,) in session.exec(select(Player.team).join(Roster, Roster.player_id == Player.id).where(Roster.my_team == True)).all() if t]
+            team_news = sdata.news_by_teams(teams)
+            # Map pid -> player record
+            pid_to_player = {p.id: p for p in session.exec(select(Player).where(Player.id.in_(pids))).all()}
+            matched_any = False
+            for pid, p in pid_to_player.items():
+                pitems = sdata.extract_player_news(team_news, p.name)
+                for it in pitems[:3]:  # cap per player to avoid flood
+                    items.append({
+                        "player_id": pid,
+                        "name": p.name,
+                        "team": p.team,
+                        "status": it.get("Categories") or it.get("Source") or "News",
+                        "note": (it.get("Title") or "") + (": " + it.get("Content") if it.get("Content") else ""),
+                        "timestamp": it.get("Updated") or it.get("UpdatedUtc") or it.get("TimeAgo"),
+                        "kind": "news",
+                    })
+                    matched_any = True
+            # If no specific player mentions found, include top general team news items
+            if not matched_any:
+                for it in team_news[:5]:
+                    items.append({
+                        "player_id": None,
+                        "name": it.get("PlayerName") or it.get("Title") or "News",
+                        "team": it.get("Team") or None,
+                        "status": it.get("Categories") or it.get("Source") or "News",
+                        "note": (it.get("Title") or "") + (": " + it.get("Content") if it.get("Content") else ""),
+                        "timestamp": it.get("Updated") or it.get("UpdatedUtc") or it.get("TimeAgo"),
+                        "kind": "news",
+                    })
+        except Exception:
+            # If not configured or failed, silently skip external news
+            pass
+    return {"items": items}
+
+
+@router.get("/standings")
+def standings(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    try:
+        table = espn_provider.fetch_standings()
+        if table:
+            return {"table": table, "source": "espn"}
+    except Exception:
+        pass
+    table = [{"team": "Standings unavailable", "record": "-", "points_for": 0}]
+    return {"table": table, "source": "placeholder"}
+
+
+@router.get("/dashboard/cards")
+def dashboard_cards(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    # Compose a set of carousel cards for the dashboard
+    settings = session.get(SettingsRow, 1)
+    week = int((settings.data or {}).get("current_week", 1)) if settings else 1
+    # Injury timelines
+    inj = session.exec(select(Injury, Player).join(Player, Injury.player_id == Player.id).where(Injury.week == week)).all()
+    injury_cards = []
+    for i, p in inj:
+        if i.status or i.note:
+            tag = 'Expected to play' if (i.status or '').lower()== 'questionable' and (i.note or '').lower().find('expected')>=0 else (i.status or 'Update')
+            injury_cards.append({"type":"injury","player":p.name,"team":p.team,"tag":tag,"status": i.status, "note":i.note,"timestamp":i.updated_at.isoformat()})
+    # Bye week alerts
+    bye_cards = []
+    starters = session.exec(select(Roster, Player).join(Player, Roster.player_id==Player.id).where(Roster.my_team==True, Roster.status==RosterStatus.start)).all()
+    for r, p in starters:
+        if p.bye_week and p.bye_week == week+1:
+            # find bench replacement same position
+            bench = session.exec(select(Roster, Player).join(Player, Roster.player_id==Player.id).where(Roster.my_team==True, Roster.status==RosterStatus.bench, Player.position==p.position)).all()
+            repl = bench[0][1].name if bench else None
+            bye_cards.append({"type":"bye","player":p.name,"team":p.team,"position":p.position,"bye_week":p.bye_week,"replacement":repl})
+    # Weather warnings (high wind / heavy rain) for starters
+    from ..models import Game
+    team_games = {g.team: g for g in session.exec(select(Game).where(Game.week==week)).all()}
+    weather_cards = []
+    for r,p in starters:
+        g = team_games.get(p.team or "")
+        wx = g.weather if g else None
+        if wx:
+            wind = (wx.get('wind_kmh') or 0)
+            precip = (wx.get('precip_prob') or 0)
+            if (p.position in ('QB','K') and wind and wind>=25) or (precip and precip>=60):
+                weather_cards.append({"type":"weather","player":p.name,"team":p.team,"wx":wx})
+    # Late swap reminders
+    swap_cards = []
+    import datetime as _dt
+    for r,p in starters:
+        g = team_games.get(p.team or "")
+        if g and g.kickoff_utc and g.kickoff_utc.weekday()==6 and g.kickoff_utc.hour>=20:
+            swap_cards.append({"type":"late_swap","player":p.name,"team":p.team,"kickoff":g.kickoff_utc.isoformat()})
+    # Waiver watchlist (top 3)
+    from ..services.waivers import waiver_suggestions
+    ww = waiver_suggestions(session, week)
+    waiver_cards = [{"type":"waiver","name":w['name'],"team":w['position'],"vorp_delta":w['vorp_delta'],"faab":w['faab_bid']} for w in ww[:3]]
+    # Trade pulse (simple pulse using vorp totals)
+    from ..services.vorp import compute_vorp
+    vorp = compute_vorp(session, week)
+    my_ids = [r.player_id for r in session.exec(select(Roster).where(Roster.my_team==True)).all()]
+    total_vorp = sum(vorp.get(pid,0) for pid in my_ids)
+    trade_cards = [{"type":"trade_pulse","summary":f"Roster VORP total {round(total_vorp,1)} — Explore 1-2 upgrades at weakest positions."}]
+    # Matchup (S.o.S via DVP): flag easy (rank high fp allowed) or tough (rank low fp allowed)
+    from ..models import DVP
+    matchup_cards = []
+    dvp_map: Dict[tuple, DVP] = {}
+    for d in session.exec(select(DVP)).all():
+        dvp_map[(d.team, d.position)] = d
+    for r,p in starters:
+        g = team_games.get(p.team or "")
+        opp = g.opponent if g else None
+        if opp:
+            d = dvp_map.get((opp, p.position))
+            if d and d.rank:
+                # Assume higher rank = easier (more points allowed). Thresholds: top 10 easy, bottom 10 tough
+                tag = None
+                if d.rank <= 10:
+                    tag = "🔥 Easy matchup"
+                elif d.rank >= 23:
+                    tag = "🧊 Tough matchup"
+                if tag:
+                    matchup_cards.append({"type":"matchup","player":p.name,"team":p.team,"position":p.position,"opponent":opp,"rank":d.rank,"fp_allowed":d.fp_allowed,"tag":tag})
+    return {"injuries": injury_cards, "byes": bye_cards, "weather": weather_cards, "late_swap": swap_cards, "waivers": waiver_cards, "trade": trade_cards, "matchups": matchup_cards}
+
+
+@router.post("/admin/update-everything")
+def update_everything(week: int, body: Dict[str, Any] | None = None, session: Session = Depends(get_session)) -> Dict[str, Any]:
+    body = body or {}
+    # Ingest
+    c_fp = fp_provider.fetch_projections(session, week)
+    c_espn = espn_provider.fetch_projections(session, week)
+    c_sd_proj = sdata.fetch_projections(session, week)
+    try:
+        from ingest.providers import yahoo as yahoo_provider
+        c_yahoo_proj = yahoo_provider.fetch_projections(session, week)
+    except Exception:
+        c_yahoo_proj = 0
+    injuries_provider.fetch_injuries(session, week)
+    adp_fp = adp_provider.fetch_adp(session)
+    adp_es = espn_provider.fetch_adp(session)
+    try:
+      dvp_count = dvp_provider.fetch_dvp(session)
+    except Exception:
+      dvp_count = 0
+    # Optional SportsData.io injuries
+    sd_inj = 0
+    try:
+        sd_inj = sdata.fetch_injuries(session, week)
+    except Exception:
+        sd_inj = 0
+    session.commit()
+    # Optional schedule import
+    sched_csv = body.get("schedule_csv")
+    imported = 0
+    if sched_csv:
+        lines = [ln.strip() for ln in sched_csv.strip().splitlines() if ln.strip()]
+        header = [h.strip().lower() for h in lines[0].split(",")]
+        from datetime import datetime
+        for line in lines[1:]:
+            cols=[c.strip() for c in line.split(",")]
+            row=dict(zip(header, cols))
+            team=row.get('team'); opp=row.get('opponent'); home=row.get('home','1') in ('1','true','TRUE','yes'); ko=row.get('kickoff_iso')
+            dt=None
+            if ko:
+                try: dt=datetime.fromisoformat(ko)
+                except: dt=None
+            if team:
+                upsert_game(session, week=week, team=team.upper(), opponent=(opp or None), home=home, kickoff_utc=dt)
+                imported+=1
+        session.commit()
+    # Blend
+    blended = blend_projections(session, week)
+    for pid, data_b in blended.items():
+        row = session.exec(select(Projection).where(Projection.player_id == pid, Projection.week == week, Projection.source == "blended")).first()
+        if not row:
+            session.add(Projection(player_id=pid, week=week, source="blended", expected=data_b["expected"], stdev=1.5))
+        else:
+            row.expected = data_b["expected"]
+    session.commit()
+    # Weather: run async fetch from thread context safely
+    import anyio
+    anyio.from_thread.run(fetch_weather_for_week, session, week)
+    # Optimize
+    result = optimize_lineup(session, week=week, objective="risk", lam=0.35, stack_bonus=True)
+    return {"ok": True, "counts": {"fp_proj": c_fp, "espn_proj": c_espn, "sportsdata_proj": c_sd_proj, "yahoo_proj": c_yahoo_proj, "adp_fp": adp_fp, "adp_espn": adp_es, "dvp": dvp_count, "sportsdata_inj": sd_inj, "schedule_imported": imported, "blended": len(blended)}, "lineup": result}
 
 
 @router.post("/admin/backfill-teams")

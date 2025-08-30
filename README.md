@@ -25,6 +25,11 @@ docker compose exec api python -m backend.app.seeds.seed
 
 5. Health check: http://localhost:8000/api/healthz
 
+### Tooling Versions
+
+- Node: >= 18 (Node 20 recommended)
+- npm: >= 11.5.2 (the repo pins `packageManager: npm@11.5.2` and the web Docker image installs this globally)
+
 ### Hot Reload (Backend Dev)
 
 - Start dev profile with reload:

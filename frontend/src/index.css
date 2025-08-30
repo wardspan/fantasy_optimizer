@@ -2,9 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-body { @apply bg-gray-50 text-gray-900; }
-.dark body { @apply bg-gray-950 text-gray-100; }
+/* Color tokens (inspired by eachandother.com contrast and clarity) */
+:root {
+  --bg: #f7f8fa;
+  --text: #0f172a;
+  --muted: #475569;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --accent: #38bdf8; /* sky-400 */
+}
+/* Dark mode variables: set directly on the .dark root for reliable cascade */
+.dark {
+  --bg: #0b0d0e;          /* near-black, not pure */
+  --text: #f1f5f9;        /* slate-50/100 range for strong contrast */
+  --muted: #a8b3bf;       /* softened secondary text */
+  --card: #121417;        /* elevated surfaces */
+  --border: #2b3137;      /* subtle separators */
+  --accent: #facc15;      /* vibrant accent in dark (amber-400) */
+}
 
-.card { @apply bg-white dark:bg-gray-800 rounded shadow; }
-.muted { @apply text-gray-600 dark:text-gray-300; }
+html, body { background-color: var(--bg); color: var(--text); }
+body { @apply antialiased; }
+
+.card { background-color: var(--card); border: 1px solid var(--border); border-radius: 0.5rem; box-shadow: 0 1px 2px rgb(0 0 0 / 0.06); }
+.muted { color: var(--muted); }
+.text-base-dark { color: var(--text); }
+.text-muted-dark { color: var(--muted); }
+.border-muted-dark { border-color: var(--border); }
+.bg-soft-dark { background-color: var(--card); }
+.link { color: var(--accent); }
+.link:hover { text-decoration: underline; }
+
+/* Improve readability of common Tailwind utilities in dark mode */
+.dark .text-gray-600 { color: var(--muted) !important; }
+.dark .text-gray-700 { color: var(--muted) !important; }
+.dark .text-gray-500 { color: #c0c9d2 !important; }
+.dark .text-gray-300, .dark .text-gray-200 { color: var(--text) !important; }
+.dark .bg-white { background-color: var(--card) !important; }
+.dark .border-gray-200, .dark .border-gray-300 { border-color: var(--border) !important; }
+.dark .bg-gray-200 { background-color: #1c2126 !important; color: var(--text) !important; }
+/* Default border color in dark for elements using plain `border` */
+.dark *, .dark *::before, .dark *::after { border-color: var(--border); }
+
+/* Header translucency tuned for dark */
+.dark header { background-color: rgba(18,20,23,0.85) !important; }
+
+/* Buttons, inputs, and controls: ensure clear focus/hover in dark */
+.dark input, .dark select, .dark textarea { background-color: #0f1215; color: var(--text); border-color: var(--border); }
+.dark input::placeholder, .dark textarea::placeholder { color: #7b8793; }
+.dark button { color: var(--text); }
+.dark button:focus-visible, .dark a:focus-visible, .dark input:focus-visible, .dark select:focus-visible, .dark textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Inputs & buttons in dark mode */
+/* Hide default scrollbar for carousel aesthetics */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .badge { @apply text-[10px] px-1.5 py-0.5 rounded; }
+
+/* Carousel: smooth, CSS-driven marquee with hover pause */
+@keyframes marquee-x {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.carousel { overflow: hidden; }
+.carousel-track {
+  display: flex;
+  gap: 0.75rem; /* match gap-3 */
+  will-change: transform;
+  animation: marquee-x var(--marquee-duration, 25s) linear infinite;
+}
+.carousel:hover .carousel-track { animation-play-state: paused; }
+.carousel-track > * { flex: 0 0 auto; }
+@media (prefers-reduced-motion: reduce) {
+  .carousel-track { animation: none; }
+}

@@ -7,8 +7,12 @@ import hashlib
 import base64
 
 from fastapi import Depends, HTTPException, Header
+from passlib.context import CryptContext
+from sqlmodel import Session, select
 
 from .settings import get_settings
+from .db import engine
+from .models import User
 
 
 def _sign(payload: str, secret: str) -> str:
@@ -53,3 +57,28 @@ def auth_required(authorization: Optional[str] = Header(default=None)):
     if not verify_token(token):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    return pwd_ctx.hash(password)
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        return pwd_ctx.verify(password, hashed)
+    except Exception:
+        return False
+
+
+def get_or_create_user(email: str, password: str) -> User:
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if user:
+            return user
+        user = User(email=email, password_hash=hash_password(password))
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user

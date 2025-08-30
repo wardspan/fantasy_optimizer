@@ -1,5 +1,6 @@
 FROM node:20-alpine AS deps
 WORKDIR /web
+RUN npm i -g npm@11.5.2
 COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* .npmrc* ./
 RUN if [ -f package-lock.json ]; then npm ci; \
     elif [ -f pnpm-lock.yaml ]; then npm i -g pnpm && pnpm i --frozen-lockfile; \
@@ -8,8 +9,8 @@ RUN if [ -f package-lock.json ]; then npm ci; \
 
 FROM node:20-alpine AS dev
 WORKDIR /web
+RUN npm i -g npm@11.5.2
 COPY --from=deps /web/node_modules ./node_modules
 COPY . .
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host"]
-

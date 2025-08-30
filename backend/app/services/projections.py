@@ -7,12 +7,14 @@ from sqlmodel import Session, select
 from ..models import Projection, Player, SettingsRow
 
 
-DEFAULT_WEIGHTS = {"QB": {"espn": 0.6, "fantasypros": 0.4},
-                   "RB": {"espn": 0.6, "fantasypros": 0.4},
-                   "WR": {"espn": 0.6, "fantasypros": 0.4},
-                   "TE": {"espn": 0.6, "fantasypros": 0.4},
-                   "K": {"espn": 0.6, "fantasypros": 0.4},
-                   "DST": {"espn": 0.6, "fantasypros": 0.4}}
+DEFAULT_WEIGHTS = {
+    "QB": {"espn": 0.5, "fantasypros": 0.3, "sportsdata": 0.2, "yahoo": 0.0},
+    "RB": {"espn": 0.5, "fantasypros": 0.3, "sportsdata": 0.2, "yahoo": 0.0},
+    "WR": {"espn": 0.5, "fantasypros": 0.3, "sportsdata": 0.2, "yahoo": 0.0},
+    "TE": {"espn": 0.5, "fantasypros": 0.3, "sportsdata": 0.2, "yahoo": 0.0},
+    "K":  {"espn": 0.5, "fantasypros": 0.3, "sportsdata": 0.2, "yahoo": 0.0},
+    "DST": {"espn": 0.5, "fantasypros": 0.3, "sportsdata": 0.2, "yahoo": 0.0},
+}
 
 
 def get_weights(session: Session) -> Dict[str, Dict[str, float]]:
@@ -50,4 +52,3 @@ def blend_projections(session: Session, week: int) -> Dict[int, Dict[str, float]
             continue
         blended[pid] = {"expected": total / total_w}
     return blended
-

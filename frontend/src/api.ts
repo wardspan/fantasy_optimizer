@@ -31,6 +31,26 @@ export async function saveSettings(data:any): Promise<{ok:boolean}> {
   return api('/api/settings', { method:'POST', body: JSON.stringify({ data }) })
 }
 
-export async function login(password: string): Promise<{ok:boolean, token:string}> {
-  return api('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
+export async function login(email: string, password: string): Promise<{ok:boolean, token:string}> {
+  return api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+}
+
+export async function register(email: string, password: string): Promise<{ok:boolean, token:string}> {
+  return api('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) })
+}
+
+export async function getMyRoster(): Promise<{roster:any[]}> {
+  return api('/api/roster/my')
+}
+
+export async function getMyNews(): Promise<{items:any[]}> {
+  return api('/api/news/my-players')
+}
+
+export async function getStandings(): Promise<{table:any[], source?:string}> {
+  return api('/api/standings')
+}
+
+export async function getDashboardCards(): Promise<{injuries:any[], byes:any[], weather:any[], late_swap:any[], waivers:any[], trade:any[]}> {
+  return api('/api/dashboard/cards')
 }

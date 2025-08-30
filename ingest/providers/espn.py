@@ -172,3 +172,29 @@ def fetch_private_roster(session: Session, week: int, season: int | None = None)
             rrow.my_team = True
         imported += 1
     return {"ok": True, "count": imported, "starts": starts, "bench": benches, "ir": irs}
+
+
+def fetch_standings() -> list[dict]:
+    settings = get_settings()
+    if not (settings.espn_s2 and settings.swid and settings.league_id):
+        return []
+    import datetime as _dt
+    season = _dt.datetime.utcnow().year
+    url = f"https://fantasy.espn.com/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{settings.league_id}?view=mTeam&view=mStandings"
+    cookies = {"espn_s2": settings.espn_s2, "SWID": settings.swid}
+    with httpx.Client(timeout=20, cookies=cookies) as client:
+        r = client.get(url)
+        r.raise_for_status()
+        data = r.json()
+    teams = data.get("teams", [])
+    rows = []
+    for t in teams:
+        name = t.get("location", "") + " " + t.get("nickname", "")
+        rec = t.get("record", {}) or t.get("overall", {})
+        overall = rec.get("overall", rec)
+        wins = overall.get("wins") if isinstance(overall, dict) else t.get("wins")
+        losses = overall.get("losses") if isinstance(overall, dict) else t.get("losses")
+        pf = t.get("pointsFor") or t.get("totalPoints", 0)
+        rows.append({"team": name.strip() or f"Team {t.get('id')}", "record": f"{wins or 0}-{losses or 0}", "points_for": pf})
+    # Sort by wins desc, points_for desc
+    return sorted(rows, key=lambda x: (-(int(str(x['record']).split('-')[0])), -float(x.get('points_for', 0))), )

@@ -24,6 +24,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-fantasy}
       POSTGRES_USER: ${POSTGRES_USER:-fantasy}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      APP_PASSWORD: ${APP_PASSWORD}
+      AUTH_SECRET: ${AUTH_SECRET}
     depends_on:
       db:
         condition: service_healthy

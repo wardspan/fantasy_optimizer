@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     league_id: str | None = os.getenv("LEAGUE_ID") or None
     team_id: str | None = os.getenv("TEAM_ID") or None
 
+    # SportsData.io (optional)
+    sportsdata_api_key: str | None = os.getenv("SPORTSDATA_API_KEY") or None
+
+    # Yahoo Fantasy Sports (optional)
+    yahoo_ap_id: str | None = os.getenv("YAHOO_AP_ID") or None
+    yahoo_client_id: str | None = os.getenv("YAHOO_CLIENTID") or None
+    yahoo_secret: str | None = os.getenv("YAHOO_SECRET") or None
+
     slack_webhook_url: str | None = os.getenv("SLACK_WEBHOOK_URL") or None
 
     smtp_host: str | None = os.getenv("SMTP_HOST") or None

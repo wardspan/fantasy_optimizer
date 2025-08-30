@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 export default function Layout({ children, page, setPage }:{ children:any, page:string, setPage:(p:any)=>void }){
   const [menuOpen,setMenuOpen]=useState(false)
-  const pages = ['Dashboard','Lineup','Draft','Waivers','Trades','WhatIf','Settings','Reports']
+  const pages = ['Dashboard','Draft','Lineup','Waivers','Trades','Reports','Settings']
   const logout = ()=>{ try{ localStorage.removeItem('authToken'); location.reload() }catch{} }
   return (
     <div className="min-h-screen">
@@ -35,4 +35,3 @@ export default function Layout({ children, page, setPage }:{ children:any, page:
     </div>
   )
 }
-

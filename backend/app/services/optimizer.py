@@ -199,6 +199,11 @@ def greedy_fallback(session: Session, week: int, objective: str, lam: float) -> 
         base = pr.expected if objective == "expected" else _risk_adjust(pr.expected, pr.stdev or 0.0, lam)
         values[p.id] = base + pen
 
+    # Build maps for badges
+    inj_rows = session.exec(select(Injury).where(Injury.week == week)).all()
+    inj_map = {r.player_id: r.status for r in inj_rows}
+    team_games = {g.team: g for g in session.exec(select(Game).where(Game.week == week)).all()}
+
     chosen: Dict[str, List[int]] = {slot: [] for slot, _ in LINEUP_SLOTS}
     used: set[int] = set()
 
@@ -219,7 +224,17 @@ def greedy_fallback(session: Session, week: int, objective: str, lam: float) -> 
     for slot, ids in chosen.items():
         for pid in ids:
             p = session.get(Player, pid)
-            starters.append({"player_id": pid, "name": p.name, "position": slot, "value": round(values[pid], 2)})
+            g = team_games.get(p.team or "")
+            starters.append({
+                "player_id": pid,
+                "name": p.name,
+                "position": slot,
+                "team": p.team,
+                "injury": inj_map.get(pid),
+                "home": (g.home if g else None),
+                "weather": (g.weather if g else None),
+                "value": round(values[pid], 2),
+            })
     bench: List[Dict] = []
     bench_pool = [p.id for p, _pr, _pen in candidates if p.id not in used]
     seen_names: set[str] = set()

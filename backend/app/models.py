@@ -94,3 +94,19 @@ class Game(SQLModel, table=True):
     lon: Optional[float] = None
     weather: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DVP(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    team: str = Field(index=True)
+    position: str = Field(index=True)
+    rank: Optional[int] = None  # 1 = toughest or easiest depending on convention; we'll use 1 = easiest (most points allowed)
+    fp_allowed: Optional[float] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    password_hash: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
