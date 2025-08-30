@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-gray-50 text-gray-900; }
+.dark body { @apply bg-gray-950 text-gray-100; }
+
+.card { @apply bg-white dark:bg-gray-800 rounded shadow; }
+.muted { @apply text-gray-600 dark:text-gray-300; }
+.badge { @apply text-[10px] px-1.5 py-0.5 rounded; }

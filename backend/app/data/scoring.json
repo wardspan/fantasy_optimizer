@@ -1,0 +1,34 @@
+{
+  "league": {
+    "platform": "ESPN",
+    "teams": 10,
+    "starters": {"QB":1, "RB":2, "WR":2, "TE":1, "FLEX":1, "K":1, "DST":1},
+    "bench": 7,
+    "ir": 1,
+    "snake": true
+  },
+  "scoring": {
+    "passing": {"yd": 0.04, "td": 4, "int": -2, "2pc": 2},
+    "rushing": {"yd": 0.1, "td": 6, "2pr": 2},
+    "receiving": {"rec": 1, "yd": 0.1, "td": 6, "2pre": 2},
+    "kicking": {"pat": 1, "fg_0_39": 3, "fg_40_49": 4, "fg_50_59": 5, "fg_60_plus": 6, "miss_fg": -1},
+    "dst": {
+      "sacks": 1,
+      "ints": 2,
+      "fumbles": 2,
+      "td": 6,
+      "safety": 2,
+      "blk_kick": 2,
+      "points_allowed": {"0": 10, "1_6": 7, "7_13": 4, "14_17": 1, "28_34": -1, "35_plus": -4}
+    }
+  },
+  "weights": {
+    "QB": {"espn": 0.6, "fantasypros": 0.4},
+    "RB": {"espn": 0.6, "fantasypros": 0.4},
+    "WR": {"espn": 0.6, "fantasypros": 0.4},
+    "TE": {"espn": 0.6, "fantasypros": 0.4},
+    "K": {"espn": 0.6, "fantasypros": 0.4},
+    "DST": {"espn": 0.6, "fantasypros": 0.4}
+  }
+}
+

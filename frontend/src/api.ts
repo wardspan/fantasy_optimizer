@@ -1,0 +1,34 @@
+export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const token = (typeof localStorage!=='undefined') ? localStorage.getItem('authToken') : null
+  const headers: any = { 'Content-Type': 'application/json', ...(opts.headers||{}) }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(path, { ...opts, headers })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json() as Promise<T>
+}
+
+export type LineupResp = { starters: any[], bench: any[], rationale: Record<string,string> }
+
+export async function ingestAndBlend(week: number): Promise<{ok:boolean, counts:any, blended:number}> {
+  return api(`/api/projections/ingest-blend?week=${week}`, { method: 'POST' })
+}
+
+export async function importSchedule(week: number, csv: string): Promise<{ok:boolean, imported:number}> {
+  return api(`/api/admin/schedule/import?week=${week}`, { method: 'POST', body: JSON.stringify({ csv }) })
+}
+
+export async function updateWeather(week: number): Promise<{ok:boolean, updated_games:number}> {
+  return api(`/api/admin/weather/update?week=${week}`, { method: 'POST' })
+}
+
+export async function getSettings(): Promise<{data:any}> {
+  return api('/api/settings')
+}
+
+export async function saveSettings(data:any): Promise<{ok:boolean}> {
+  return api('/api/settings', { method:'POST', body: JSON.stringify({ data }) })
+}
+
+export async function login(password: string): Promise<{ok:boolean, token:string}> {
+  return api('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) })
+}
